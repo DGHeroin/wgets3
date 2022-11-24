@@ -4,17 +4,18 @@ import (
     "context"
     "github.com/minio/minio-go/v7"
     "io"
+    "strings"
     "time"
 )
 
 type (
     Store struct {
-        bucket string
-        client *minio.Client
+        defaultBucket string
+        client        *minio.Client
     }
 )
 type (
-    ExistResult struct {
+    ObjectInfo struct {
         Key            string    `json:"key,omitempty"`
         LastModified   time.Time `json:"lastModified,omitempty"`
         Size           int64     `json:"size,omitempty"`
@@ -27,15 +28,22 @@ type (
     }
 )
 
-func (s *Store) Exist(key string) (*ExistResult, error) {
-    st, err := s.client.StatObject(context.Background(), s.bucket, key, minio.StatObjectOptions{})
+func or(a, b string) string {
+    if a != "" {
+        return a
+    }
+    return b
+}
+func (s *Store) Exist(bucket, key string) (*ObjectInfo, error) {
+    bucket = or(bucket, s.defaultBucket)
+    st, err := s.client.StatObject(context.Background(), bucket, key, minio.StatObjectOptions{})
     if err != nil {
         if minio.ToErrorResponse(err).StatusCode == 404 {
-            return &ExistResult{}, nil
+            return &ObjectInfo{}, nil
         }
-        return &ExistResult{}, err
+        return &ObjectInfo{}, err
     }
-    result := &ExistResult{
+    result := &ObjectInfo{
         Key:            st.Key,
         LastModified:   st.LastModified,
         Size:           st.Size,
@@ -50,16 +58,68 @@ func (s *Store) Exist(key string) (*ExistResult, error) {
     return result, nil
 }
 
-func (s *Store) Upload(key string, r io.Reader, objectSize int64) error {
-    _, err := s.client.PutObject(context.Background(), s.bucket, key, r, objectSize, minio.PutObjectOptions{
+func (s *Store) Upload(bucket, key string, r io.Reader, objectSize int64) error {
+    bucket = or(bucket, s.defaultBucket)
+    _, err := s.client.PutObject(context.Background(), bucket, key, r, objectSize, minio.PutObjectOptions{
         SendContentMd5: true,
     })
     return err
 }
 
-func (s *Store) UploadFile(key string, filename string) error {
-    _, err := s.client.FPutObject(context.Background(), s.bucket, key, filename, minio.PutObjectOptions{
+func (s *Store) UploadFile(bucket, key string, filename string) error {
+    bucket = or(bucket, s.defaultBucket)
+    _, err := s.client.FPutObject(context.Background(), bucket, key, filename, minio.PutObjectOptions{
         SendContentMd5: true,
     })
+    return err
+}
+
+func (s *Store) List(bucket, prefix string, fn func(ObjectInfo) bool) {
+    bucket = or(bucket, s.defaultBucket)
+    ch := s.client.ListObjects(context.Background(), bucket, minio.ListObjectsOptions{
+        Prefix:    prefix,
+        Recursive: true,
+    })
+
+    for st := range ch {
+        if st.Err != nil {
+            return
+        }
+        if strings.HasSuffix(st.Key, "/") {
+            continue
+        }
+        info := ObjectInfo{
+            Key:            st.Key,
+            LastModified:   st.LastModified,
+            Size:           st.Size,
+            ContentType:    st.ContentType,
+            Expires:        st.Expires,
+            ChecksumCRC32:  st.ChecksumCRC32,
+            ChecksumCRC32C: st.ChecksumCRC32C,
+            ChecksumSHA1:   st.ChecksumSHA1,
+            ChecksumSHA256: st.ChecksumSHA256,
+        }
+        if !fn(info) {
+            break
+        }
+    }
+
+}
+func (s *Store) RemoveBucket(bucket string) error {
+    bucket = or(bucket, s.defaultBucket)
+    return s.client.RemoveBucket(context.Background(), bucket)
+}
+func (s *Store) Remove(bucket, key string) error {
+    bucket = or(bucket, s.defaultBucket)
+    return s.client.RemoveObject(context.Background(), bucket, key, minio.RemoveObjectOptions{})
+}
+
+func (s *Store) Download(bucket, key string, w io.Writer) error {
+    bucket = or(bucket, s.defaultBucket)
+    obj, err := s.client.GetObject(context.Background(), bucket, key, minio.GetObjectOptions{})
+    if err != nil {
+        return err
+    }
+    _, err = io.Copy(w, obj)
     return err
 }

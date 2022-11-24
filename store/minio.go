@@ -1,19 +1,20 @@
 package store
 
 import (
+    "context"
     "github.com/minio/minio-go/v7"
     "github.com/minio/minio-go/v7/pkg/credentials"
     "github.com/spf13/viper"
     "log"
 )
 
-func GetConfig(prefixs ...string) *Store {
+func GetConfig(prefixs ...string) (*Store, error) {
     s := &Store{}
     prefix := "s3"
     if len(prefixs) == 1 {
         prefix = prefixs[0]
     }
-    s.bucket = viper.GetString(prefix + ".bucket")
+    s.defaultBucket = viper.GetString(prefix + ".bucket")
     var endpoint = viper.GetString(prefix + ".endpoint")
     var accessKeyId = viper.GetString(prefix + ".keyId")
     var accessKeySecret = viper.GetString(prefix + ".keySecret")
@@ -28,8 +29,11 @@ func GetConfig(prefixs ...string) *Store {
         Secure: true,
     })
     if err != nil {
-        log.Fatal(err)
+        return nil, err
     }
+    buckets, err := minioClient.ListBuckets(context.Background())
+    log.Println("===>", err)
+    log.Println("===>", buckets)
     s.client = minioClient
-    return s
+    return s, nil
 }

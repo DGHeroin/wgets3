@@ -34,7 +34,7 @@ func init() {
     Cmd.PersistentFlags().StringVar(&bucket, "b", "", "桶")
     Cmd.PersistentFlags().StringVar(&saveDir, "dir", "", "保存到本地dir")
     Cmd.PersistentFlags().StringVar(&s3prefix, "prefix", "", "s3前缀")
-    Cmd.PersistentFlags().StringVar(&NodeName, "node", "s3", "配置节点名")
+    Cmd.PersistentFlags().StringVar(&NodeName, "n", "s3", "配置节点名")
     Cmd.PersistentFlags().IntVar(&workerNum, "worker", 100, "配置节点名")
 }
 

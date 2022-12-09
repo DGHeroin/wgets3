@@ -1,9 +1,10 @@
 package cmds
 
 import (
+    "github.com/DGHeroin/wgets3/cmds/bucket"
     "github.com/DGHeroin/wgets3/cmds/download"
-    "github.com/DGHeroin/wgets3/cmds/list"
-    "github.com/DGHeroin/wgets3/cmds/ssync"
+    "github.com/DGHeroin/wgets3/cmds/objects"
+    "github.com/DGHeroin/wgets3/cmds/s2ssync"
     "github.com/DGHeroin/wgets3/cmds/upload"
     "github.com/DGHeroin/wgets3/utils"
     "github.com/spf13/cobra"
@@ -49,7 +50,9 @@ func init() {
 }
 
 func Run() {
-    rootCmd.AddCommand(download.Cmd, list.Cmd, upload.Cmd, ssync.Cmd)
+    rootCmd.AddCommand(download.Cmd, upload.Cmd, s2ssync.Cmd)
+    rootCmd.AddCommand(bucket.Cmd)
+    rootCmd.AddCommand(objects.Cmd)
     if err := rootCmd.Execute(); err != nil {
         utils.LogE("%v", err)
         os.Exit(-1)

@@ -1,8 +1,9 @@
-package ssync
+package s2ssync
 
 import (
     "github.com/DGHeroin/wgets3/store"
     "github.com/DGHeroin/wgets3/utils"
+    "github.com/dustin/go-humanize"
     "github.com/spf13/cobra"
     "io"
     "os"
@@ -60,8 +61,6 @@ func keyHandler(ch chan *store.ObjectInfo, wg *sync.WaitGroup) {
                 f.Close()
                 os.Remove(path.Join(os.TempDir(), f.Name()))
             }()
-
-            //
             err = s.Download(bucket, key, f)
             if err != nil {
                 utils.LogE("下载错误:%v\n", key, err)
@@ -77,7 +76,7 @@ func keyHandler(ch chan *store.ObjectInfo, wg *sync.WaitGroup) {
                 utils.LogE("上传错误:%v\n", err)
                 return
             }
-            utils.LogI("上传成功 %d %v\t%s\n", atomic.AddInt32(&count, 1), utils.HumanSize(float64(info.Size)), key)
+            utils.LogI("上传成功 %d %v\t%s\n", atomic.AddInt32(&count, 1), humanize.Bytes(uint64(info.Size)), key)
         }(v)
 
     }

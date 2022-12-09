@@ -14,7 +14,10 @@ func FileReadLine(path string, fn func(line int, content string) bool) error {
     defer func() {
         _ = f.Close()
     }()
-    buf := bufio.NewReader(f)
+    return ReadLine(f, fn)
+}
+func ReadLine(r io.Reader, fn func(line int, content string) bool) error {
+    buf := bufio.NewReader(r)
     i := 0
     for {
         line, _, err := buf.ReadLine()

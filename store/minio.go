@@ -1,11 +1,9 @@
 package store
 
 import (
-    "context"
     "github.com/minio/minio-go/v7"
     "github.com/minio/minio-go/v7/pkg/credentials"
     "github.com/spf13/viper"
-    "log"
 )
 
 func GetConfig(prefixs ...string) (*Store, error) {
@@ -22,6 +20,7 @@ func GetConfig(prefixs ...string) (*Store, error) {
     if region == "" {
         region = "auto"
     }
+    s.region = region
 
     minioClient, err := minio.New(endpoint, &minio.Options{
         Region: region,
@@ -31,9 +30,6 @@ func GetConfig(prefixs ...string) (*Store, error) {
     if err != nil {
         return nil, err
     }
-    buckets, err := minioClient.ListBuckets(context.Background())
-    log.Println("===>", err)
-    log.Println("===>", buckets)
     s.client = minioClient
     return s, nil
 }

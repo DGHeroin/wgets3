@@ -5,6 +5,7 @@ import (
     "github.com/DGHeroin/ActorSystem/actor"
     "github.com/DGHeroin/wgets3/store"
     "github.com/DGHeroin/wgets3/utils"
+    "github.com/dustin/go-humanize"
     "github.com/spf13/cobra"
     "io"
     "io/fs"
@@ -28,75 +29,138 @@ var (
 )
 
 var (
-    bucket     string
-    InputFile  string
-    InputDir   string
-    OutputPath string
-    NodeName   string
+    bucket          string
+    InputFile       string
+    InputDir        string
+    InputHTTP       string
+    InputHTTPSingle string
+    OutputPath      string
+    NodeName        string
 )
 var (
-    s *store.Store
+    err error
+    s   *store.Store
 )
 
 func init() {
     Cmd.PersistentFlags().StringVar(&bucket, "b", "", "桶")
     Cmd.PersistentFlags().StringVar(&InputFile, "file", "", "wget 输入文件")
     Cmd.PersistentFlags().StringVar(&InputDir, "dir", "", "wget 上传dir")
+    Cmd.PersistentFlags().StringVar(&InputHTTP, "http", "", "wget 从http作为输入文件")
+    Cmd.PersistentFlags().StringVar(&InputHTTPSingle, "h1", "", "wget 从http作为输入文件")
     Cmd.PersistentFlags().StringVar(&OutputPath, "prefix", "", "s3保存目录前缀")
-    Cmd.PersistentFlags().StringVar(&NodeName, "node", "s3", "配置节点名")
+    Cmd.PersistentFlags().StringVar(&NodeName, "n", "s3", "配置节点名")
 }
 
 func doUpload() error {
-    var err error
     s, err = store.GetConfig(NodeName)
     if err != nil {
         return err
     }
-    if InputFile != "" {
-        sys := actor.NewSystem("download_sys", &actor.Config{
-            MinActor:          3,
-            MaxActor:          20,
-            ActorQueueSize:    10,
-            DispatchQueueSize: 500,
-            DispatchBlocking:  true,
-        })
-        sys.Start()
+    uploadByFile()
+    uploadByDir()
+    uploadByHTTP()
+    uploadByHTTPSingle()
 
-        _ = utils.FileReadLine(InputFile, func(line int, content string) bool {
-            _ = sys.Dispatch(&DownloadMsg{
-                id:  line,
-                url: content,
-            })
-            return true
-        })
-        sys.Stop()
-    }
-    if InputDir != "" {
-        sys := actor.NewSystem("download_sys", &actor.Config{
-            MinActor:          3,
-            MaxActor:          20,
-            ActorQueueSize:    10,
-            DispatchQueueSize: 500,
-            DispatchBlocking:  true,
-        })
-        sys.Start()
-        _ = filepath.WalkDir(InputDir, func(path string, d fs.DirEntry, err error) error {
-            if d.IsDir() {
-                return nil
-            }
-            absPath := strings.ReplaceAll(path, InputDir, "")
-            if absPath == "" {
-                return nil
-            }
-            _ = sys.Dispatch(&SyncDirMsg{
-                filepath: absPath,
-                fullPath: path,
-            })
-            return nil
-        })
-        sys.Stop()
-    }
     return nil
+}
+
+func uploadByFile() {
+    if InputFile == "" {
+        return
+    }
+    sys := actor.NewSystem("download_sys", &actor.Config{
+        MinActor:          3,
+        MaxActor:          20,
+        ActorQueueSize:    10,
+        DispatchQueueSize: 500,
+        DispatchBlocking:  true,
+    })
+    sys.Start()
+
+    _ = utils.FileReadLine(InputFile, func(line int, content string) bool {
+        _ = sys.Dispatch(&DownloadMsg{
+            id:  line,
+            url: content,
+        })
+        return true
+    })
+    sys.Stop()
+}
+func uploadByDir() {
+    if InputDir == "" {
+        return
+    }
+    sys := actor.NewSystem("download_sys", &actor.Config{
+        MinActor:          3,
+        MaxActor:          20,
+        ActorQueueSize:    10,
+        DispatchQueueSize: 500,
+        DispatchBlocking:  true,
+    })
+    sys.Start()
+    _ = filepath.WalkDir(InputDir, func(path string, d fs.DirEntry, err error) error {
+        if d.IsDir() {
+            return nil
+        }
+        absPath := strings.ReplaceAll(path, InputDir, "")
+        if absPath == "" {
+            return nil
+        }
+        _ = sys.Dispatch(&SyncDirMsg{
+            filepath: absPath,
+            fullPath: path,
+        })
+        return nil
+    })
+    sys.Stop()
+}
+func uploadByHTTP() {
+    if InputHTTP == "" {
+        return
+    }
+    sys := actor.NewSystem("download_sys", &actor.Config{
+        MinActor:          3,
+        MaxActor:          20,
+        ActorQueueSize:    10,
+        DispatchQueueSize: 500,
+        DispatchBlocking:  true,
+    })
+    sys.Start()
+
+    resp, err := http.Get(InputHTTP)
+    if err != nil {
+        utils.LogE("http input file get error:%v ", err)
+        return
+    }
+    _ = utils.ReadLine(resp.Body, func(line int, content string) bool {
+        _ = sys.Dispatch(&DownloadMsg{
+            id:  line,
+            url: content,
+        })
+        return true
+    })
+    sys.Stop()
+}
+func uploadByHTTPSingle() {
+    if InputHTTPSingle == "" {
+        return
+    }
+
+    sys := actor.NewSystem("download_sys", &actor.Config{
+        MinActor:          3,
+        MaxActor:          20,
+        ActorQueueSize:    10,
+        DispatchQueueSize: 500,
+        DispatchBlocking:  true,
+    })
+    sys.Start()
+
+    _ = sys.Dispatch(&DownloadMsg{
+        id:  0,
+        url: InputHTTPSingle,
+    })
+    sys.Stop()
 }
 
 type DownloadMsg struct {
@@ -128,19 +192,24 @@ func (d *DownloadMsg) Execute(actor.Context) {
         return
     }
 
-    _ = utils.HTTPDownload(d.url, func(header http.Header, r io.Reader) {
+    _ = utils.HTTPDownload(d.url, func(statusCode int, header http.Header, r io.Reader) {
+        if statusCode != http.StatusOK {
+            utils.LogI("下载失败:[%d]%v\n", statusCode, d.url)
+            return
+        }
         size := int64(0)
         data, err := ioutil.ReadAll(r)
         if err != nil {
             return
         }
+
         size = int64(len(data))
         for {
             if err := s.Upload(bucket, path.Join(OutputPath, filename), bytes.NewBuffer(data), size); err != nil {
                 utils.LogE("上传失败:%v 错误:%v\n", filename, err)
                 return
             } else {
-                utils.LogI("上传成功: %v %v 文件:%v \n", time.Since(startTime), utils.HumanBytesSize(float64(size)), filename)
+                utils.LogI("上传成功: %v %v 文件:%v \n", time.Since(startTime), humanize.Bytes(uint64(size)), filename)
                 break
             }
         }

@@ -12,6 +12,7 @@ type (
     Store struct {
         defaultBucket string
         client        *minio.Client
+        region        string
     }
 )
 type (
@@ -79,6 +80,7 @@ func (s *Store) List(bucket, prefix string, fn func(ObjectInfo) bool) {
     ch := s.client.ListObjects(context.Background(), bucket, minio.ListObjectsOptions{
         Prefix:    prefix,
         Recursive: true,
+        // MaxKeys:   10000,
     })
 
     for st := range ch {
@@ -113,7 +115,6 @@ func (s *Store) Remove(bucket, key string) error {
     bucket = or(bucket, s.defaultBucket)
     return s.client.RemoveObject(context.Background(), bucket, key, minio.RemoveObjectOptions{})
 }
-
 func (s *Store) Download(bucket, key string, w io.Writer) error {
     bucket = or(bucket, s.defaultBucket)
     obj, err := s.client.GetObject(context.Background(), bucket, key, minio.GetObjectOptions{})
@@ -122,4 +123,23 @@ func (s *Store) Download(bucket, key string, w io.Writer) error {
     }
     _, err = io.Copy(w, obj)
     return err
+}
+func (s *Store) BucketList() ([]string, error) {
+    info, err := s.client.ListBuckets(context.Background())
+    if err != nil {
+        return nil, err
+    }
+    var result []string
+    for _, bucketInfo := range info {
+        result = append(result, bucketInfo.Name)
+    }
+    return result, nil
+}
+func (s *Store) BucketCreate(name string) error {
+    return s.client.MakeBucket(context.Background(), name, minio.MakeBucketOptions{
+        Region: s.region,
+    })
+}
+func (s *Store) BucketRemove(name string) error {
+    return s.client.RemoveBucket(context.Background(), name)
 }
